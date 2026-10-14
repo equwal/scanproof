@@ -1,0 +1,1 @@
+{ "name": "scanproof", "private": true, "type": "module", "license": "SEE LICENSE IN LICENSE", "scripts": { "test": "node --test" } }

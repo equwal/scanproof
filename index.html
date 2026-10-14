@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scan Proofreader</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header>
+  <label class="btn">Import PDF<input type="file" id="inPdf" accept="application/pdf" hidden></label>
+  <label class="btn">Import text<input type="file" id="inText" accept=".txt,.epub,text/plain,application/epub+zip" hidden></label>
+  <span class="sep"></span>
+  <button id="prev" title="Previous page (Alt+←)">◀</button>
+  <input id="pageNo" type="number" min="1" value="1" aria-label="Page number"> <span id="pageCount">/ 0</span>
+  <button id="next" title="Next page (Alt+→)">▶</button>
+  <button id="prevEdit" title="Previous edited page">◀✎</button>
+  <button id="nextEdit" title="Next edited page">✎▶</button>
+  <span id="editCount"></span>
+  <span class="sep"></span>
+  <label>Zoom <input id="zoom" type="range" min="1" max="3" step="0.25" value="1"></label>
+  <span class="sep"></span>
+  <details id="exports">
+    <summary class="btn">Export ▾</summary>
+    <div class="menu">
+      <button data-export="epub">EPUB</button>
+      <button data-export="mobi">MOBI</button>
+      <button data-export="pdf">PDF (print)</button>
+      <button data-export="txt">TXT</button>
+      <button data-export="pages">TXT, one page per form feed</button>
+      <button data-export="patch">.patch</button>
+    </div>
+  </details>
+  <details id="metaBox">
+    <summary class="btn">Book ▾</summary>
+    <div class="menu">
+      <label>Title <input id="mTitle"></label>
+      <label>Author <input id="mAuthor"></label>
+      <label>Language <input id="mLang" size="4"></label>
+      <button id="clearAll" class="danger">Close project</button>
+    </div>
+  </details>
+  <span id="status" role="status"></span>
+</header>
+<main>
+  <section id="imgPane" aria-label="Page image"><canvas id="canvas"></canvas><p id="noPdf">Import the scanned PDF to see page images.</p></section>
+  <section id="textPane">
+    <div class="bar">
+      <span>Text <small>(# heading · [nota] footnote · *italic* · **bold** · ⟦↪⟧ continues on next page · ⟦↩⟧ continued)</small></span>
+      <span>
+        <button id="pullUp" title="Move this page's first line to the previous page">⤒ line to prev page</button>
+        <button id="pushDown" title="Move this page's last line to the next page">line to next page ⤓</button>
+        <button id="revert">Revert page</button>
+      </span>
+    </div>
+    <textarea id="editor" spellcheck="false" lang="eo" aria-label="Page text"></textarea>
+    <div class="bar"><span>Changes on this page</span><span id="diffStat"></span></div>
+    <div id="diff" aria-label="Changes on this page"></div>
+  </section>
+</main>
+</body>
+</html>

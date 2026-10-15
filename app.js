@@ -5,10 +5,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(['inPdf', 'inText', 'prev', 'next', 'prevEdit', 'nextEdit', 'pageNo', 'pageCount', 'editCount', 'zoom',
   'mTitle', 'mAuthor', 'mLang', 'clearAll', 'status', 'canvas', 'noPdf', 'imgPane', 'editor', 'diff', 'diffStat', 'pullUp', 'pushDown', 'revert', 'saveBack',
-  'overlay', 'inOverlay', 'ovOn', 'ovOpacity', 'ovBlend', 'ovOffset', 'ovClear'].map(k => [k, $(k)]));
+  'overlay', 'inOverlay', 'ovOn', 'ovLive', 'ovOpacity', 'ovBlend', 'ovOffset', 'ovClear'].map(k => [k, $(k)]));
 
 // Project: orig = imported text, edit = current text, one string per page.
-const ovDefaults = { on: true, opacity: 0.5, blend: 'normal', offset: 0 };
+const ovDefaults = { on: true, opacity: 0.5, blend: 'normal', offset: 0, live: true };
 let P = { name: 'book', title: '', author: '', lang: 'eo', uuid: crypto.randomUUID(), orig: [''], edit: [''], cur: 0, overlay: { ...ovDefaults } };
 let pdf = null, ovPdf = null;
 
@@ -76,7 +76,52 @@ async function renderImage() {
   ui.canvas.style.width = w + 'px';
   const h = await draw(pdf, P.cur, ui.canvas, w);
   applyOverlayStyle();
-  await draw(ovPdf && P.overlay.on ? ovPdf : null, P.cur + P.overlay.offset, ui.overlay, w, h || undefined);
+  view = { w, h };
+  if (live()) { await draw(null, 0, ui.overlay, w); drawLive(); }
+  else await draw(ovPdf && P.overlay.on ? ovPdf : null, P.cur + P.overlay.offset, ui.overlay, w, h || undefined);
+}
+
+// ---- live text: with a layout file (?layout=<url>: the line boxes of the corrected PDF, one [l, t, r, b, x, y, size, exact, last] per text line) the overlay draws the
+// CURRENT text of the page in red at those places, so an edit shows at once. Words that are not in the imported text (your edits) get a blue box.
+let layout = null;
+let view = { w: 0, h: 0 };
+const live = () => !!layout && P.overlay.on && P.overlay.live !== false;
+const plainLine = l => l.replace(/^\[nota\] ?/, '').replace(/\{\{|\}\}/g, '').replace(/\*{1,3}/g, '').replace(/\^(?=\p{L})/gu, '');
+const wordsOf = t => t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+
+function drawLive() {
+  const pg = layout?.pages[P.cur], c = ui.overlay;
+  if (!live() || !pg || !view.w) return;
+  const h = view.h || view.w * pg.h / pg.w;
+  c.width = view.w * devicePixelRatio; c.height = h * devicePixelRatio;
+  const ctx = c.getContext('2d'), k = c.width / pg.w;
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  const left = new Map();
+  for (const w of wordsOf(P.orig[P.cur])) left.set(w, (left.get(w) || 0) + 1);
+  const lines = P.edit[P.cur].split('\n').filter(l => l.trim() && !/^\[img:/.test(l.trim())).map(plainLine);
+  const items = pg.items, last = items[items.length - 1], pitch = items.length > 1 ? last[5] - items[items.length - 2][5] : last ? last[6] * 1.3 : 0;
+  ctx.fillStyle = '#d90000';
+  ctx.textBaseline = 'alphabetic';
+  lines.forEach((line, i) => {
+    const it = items[i] || (last && [last[0], last[1], last[2], last[3], last[4], last[5] + pitch * (i - items.length + 1), last[6], 0, 1]);
+    if (!it) return;
+    const [l, , r, , x0, y, size, exact, isLast] = it, boxW = r - l;
+    const font = s => `${s}px "Times New Roman", "Liberation Serif", Tinos, Times, serif`;
+    ctx.font = font(size);
+    const words = line.trim().split(/\s+/);
+    let nat = ctx.measureText(words.join(' ')).width, sz = size, x = x0, gap = 0;
+    if (boxW <= 0) x = (pg.w - nat) / 2;
+    else if (nat > boxW * 1.01) { sz = size * boxW / nat; ctx.font = font(sz); nat = boxW; }
+    else if (exact && !isLast && words.length > 1 && boxW / nat < 1.3) gap = (boxW - nat) / (words.length - 1);
+    const spc = ctx.measureText(' ').width + gap;
+    for (const w of words) {
+      const wd = ctx.measureText(w).width;
+      ctx.fillText(w, x, y);
+      const miss = wordsOf(w).filter(p => { const n = left.get(p) || 0; if (n) left.set(p, n - 1); return !n; });
+      if (miss.length) { ctx.strokeStyle = '#1a33e6'; ctx.lineWidth = Math.max(1.2, sz / 14); ctx.strokeRect(x - 1, y - 0.8 * sz, wd + 2, 1.05 * sz); }
+      x += wd + spc;
+    }
+  });
 }
 
 // ---- overlay: a second PDF drawn over the scan with transparency, page n + offset over scan page n
@@ -85,7 +130,7 @@ function applyOverlayStyle() {
   ui.overlay.style.opacity = o.opacity;
   ui.overlay.style.mixBlendMode = o.blend;
   ui.overlay.hidden = !o.on;
-  ui.ovOn.checked = o.on; ui.ovOpacity.value = o.opacity; ui.ovBlend.value = o.blend; ui.ovOffset.value = o.offset;
+  ui.ovOn.checked = o.on; ui.ovLive.checked = o.live !== false; ui.ovLive.disabled = !layout; ui.ovOpacity.value = o.opacity; ui.ovBlend.value = o.blend; ui.ovOffset.value = o.offset;
 }
 ui.inOverlay.onchange = async () => {
   const f = ui.inOverlay.files[0]; if (!f) return;
@@ -94,11 +139,12 @@ ui.inOverlay.onchange = async () => {
   P.overlay.on = true; save(); renderImage();
   status(`Overlay PDF: ${ovPdf.numPages} pages`);
 };
+ui.ovLive.onchange = () => { P.overlay.live = ui.ovLive.checked; save(); renderImage(); };
 ui.ovOn.onchange = () => { P.overlay.on = ui.ovOn.checked; save(); renderImage(); };
 ui.ovOpacity.oninput = () => { P.overlay.opacity = +ui.ovOpacity.value; save(); applyOverlayStyle(); };
 ui.ovBlend.onchange = () => { P.overlay.blend = ui.ovBlend.value; save(); applyOverlayStyle(); };
 ui.ovOffset.onchange = () => { P.overlay.offset = Math.trunc(+ui.ovOffset.value) || 0; save(); renderImage(); };
-ui.ovClear.onclick = async () => { ovPdf = null; await kv('readwrite', s => s.delete('overlay')); renderImage(); status('Overlay removed'); };
+ui.ovClear.onclick = async () => { ovPdf = null; layout = null; await kv('readwrite', s => { s.delete('overlay'); s.delete('layout'); }); renderImage(); status('Overlay removed'); };
 
 // ---- import
 ui.inPdf.onchange = async () => {
@@ -145,7 +191,7 @@ async function readEpub(f) {
 }
 
 // ---- editing
-ui.editor.oninput = () => { P.edit[P.cur] = ui.editor.value; showDiff(); save(); };
+ui.editor.oninput = () => { P.edit[P.cur] = ui.editor.value; showDiff(); save(); drawLive(); };
 ui.revert.onclick = () => { P.edit[P.cur] = P.orig[P.cur]; go(P.cur); };
 // Re-pagination moves a line in both the original and the edit, so it does not count as an edit.
 function moveLine(from, to, first) {
@@ -235,7 +281,7 @@ document.querySelectorAll('[data-export]').forEach(b => b.onclick = async () => 
   try { await exporters[b.dataset.export](); status('Exported ' + b.dataset.export); } catch (e) { status('Export failed: ' + e); }
 });
 
-// ---- start: restore the last project and PDF, or open the files named in the address: ?pdf=<url>&text=<url>[&name=<name>][&overlay=<url>][&save=<url>]
+// ---- start: restore the last project and PDF, or open the files named in the address: ?pdf=<url>&text=<url>[&name=<name>][&overlay=<url>][&layout=<url>][&save=<url>]
 // (text = pages joined by form feeds). The links are for a server that hosts the files next to this page, so opening is instant.
 async function openFromUrl(q) {
   const [pdfRes, textRes] = await Promise.all([q.get('pdf') ? fetch(q.get('pdf')) : null, fetch(q.get('text'))]);
@@ -255,6 +301,16 @@ async function openFromUrl(q) {
       P.overlay = { ...ovDefaults };
     } catch (e) { status('Overlay not loaded: ' + e.message); }
   } else { ovPdf = null; await kv('readwrite', st => st.delete('overlay')); } // a new book does not keep the last book's overlay
+  layout = null;
+  if (q.get('layout')) {
+    try {
+      const r = await fetch(q.get('layout'));
+      if (!r.ok) throw new Error(r.status);
+      layout = await r.json();
+      P.overlay = { ...ovDefaults };
+    } catch (e) { status('Live text layout not loaded: ' + e.message); }
+  }
+  await put('layout', layout);
 }
 (async () => {
   const q = new URLSearchParams(location.search);
@@ -262,6 +318,7 @@ async function openFromUrl(q) {
   if (saved) P = { ...saved, overlay: { ...ovDefaults, ...saved.overlay } }; // projects saved before the overlay existed
   const f = await get('pdf');
   if (f) await openPdf(await f.arrayBuffer());
+  layout = (await get('layout')) || null;
   const ov = await get('overlay');
   if (ov) ovPdf = await pdfjsLib.getDocument({ data: await ov.arrayBuffer() }).promise;
   if (q.get('text') && (!edited().length || confirm('Open the linked book? Your edits on the current text will be lost (export a .patch first to keep them).'))) {
@@ -269,5 +326,5 @@ async function openFromUrl(q) {
     try { await openFromUrl(q); saved = null; history.replaceState(null, '', location.pathname); } catch (e) { status('Open failed: ' + e.message); }
   }
   syncMeta(); go(P.cur);
-  if (!/^(Open failed|Overlay not loaded)/.test(ui.status.textContent)) status(saved ? 'Restored last project' : 'Import a scanned PDF and its text (TXT or EPUB)');
+  if (!/^(Open failed|Overlay not loaded|Live text)/.test(ui.status.textContent)) status(saved ? 'Restored last project' : 'Import a scanned PDF and its text (TXT or EPUB)');
 })();

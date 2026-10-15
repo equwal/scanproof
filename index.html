@@ -52,6 +52,7 @@
     <div class="bar" id="overlayBar">
       <label class="btn">Overlay PDF<input type="file" id="inOverlay" accept="application/pdf" hidden></label>
       <label title="Show the overlay (Alt+O)"><input type="checkbox" id="ovOn" checked> show</label>
+      <label title="Draw the current text over the scan as you edit it (needs a layout)"><input type="checkbox" id="ovLive" checked> live text</label>
       <label>Opacity <input id="ovOpacity" type="range" min="0" max="1" step="0.05" value="0.5"></label>
       <select id="ovBlend" aria-label="Blend mode" title="Difference: matching ink cancels out, so mismatches stand out">
         <option value="normal">normal</option><option value="multiply">multiply</option><option value="difference">difference</option>

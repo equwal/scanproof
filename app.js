@@ -183,12 +183,27 @@ document.querySelectorAll('[data-export]').forEach(b => b.onclick = async () => 
   try { await exporters[b.dataset.export](); status('Exported ' + b.dataset.export); } catch (e) { status('Export failed: ' + e); }
 });
 
-// ---- start: restore the last project and PDF
+// ---- start: restore the last project and PDF, or open the files named in the address: ?pdf=<url>&text=<url>[&name=<name>]
+// (text = pages joined by form feeds). The links are for a server that hosts the files next to this page, so opening is instant.
+async function openFromUrl(q) {
+  const [pdfRes, textRes] = await Promise.all([q.get('pdf') ? fetch(q.get('pdf')) : null, fetch(q.get('text'))]);
+  if (!textRes.ok || (pdfRes && !pdfRes.ok)) throw new Error('could not fetch the files');
+  const pages = (await textRes.text()).replace(/\r\n?/g, '\n').split('\f');
+  if (pdfRes) { const f = await pdfRes.blob(); await openPdf(await f.arrayBuffer()); await put('pdf', f); }
+  const name = q.get('name') || 'book';
+  P = { ...P, name, title: name, orig: pages, edit: [...pages], cur: 0, uuid: crypto.randomUUID() };
+  ensurePages(pdf?.numPages || 0);
+}
 (async () => {
-  const saved = await get('project');
+  const q = new URLSearchParams(location.search);
+  let saved = await get('project');
   if (saved) P = saved;
   const f = await get('pdf');
   if (f) await openPdf(await f.arrayBuffer());
+  if (q.get('text') && (!edited().length || confirm('Open the linked book? Your edits on the current text will be lost (export a .patch first to keep them).'))) {
+    status('Opening…');
+    try { await openFromUrl(q); saved = null; history.replaceState(null, '', location.pathname); } catch (e) { status('Open failed: ' + e.message); }
+  }
   syncMeta(); go(P.cur);
-  status(saved ? 'Restored last project' : 'Import a scanned PDF and its text (TXT or EPUB)');
+  if (!ui.status.textContent.startsWith('Open failed')) status(saved ? 'Restored last project' : 'Import a scanned PDF and its text (TXT or EPUB)');
 })();

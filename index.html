@@ -48,7 +48,20 @@
   <span id="status" role="status"></span>
 </header>
 <main>
-  <section id="imgPane" aria-label="Page image"><canvas id="canvas"></canvas><p id="noPdf">Import the scanned PDF to see page images.</p></section>
+  <section id="imgPane" aria-label="Page image">
+    <div class="bar" id="overlayBar">
+      <label class="btn">Overlay PDF<input type="file" id="inOverlay" accept="application/pdf" hidden></label>
+      <label title="Show the overlay (Alt+O)"><input type="checkbox" id="ovOn" checked> show</label>
+      <label>Opacity <input id="ovOpacity" type="range" min="0" max="1" step="0.05" value="0.5"></label>
+      <select id="ovBlend" aria-label="Blend mode" title="Difference: matching ink cancels out, so mismatches stand out">
+        <option value="normal">normal</option><option value="multiply">multiply</option><option value="difference">difference</option>
+      </select>
+      <label title="Overlay page = scan page + this offset">Page offset <input id="ovOffset" type="number" value="0" size="3"></label>
+      <button id="ovClear" title="Remove the overlay PDF">✕</button>
+    </div>
+    <div id="stack"><canvas id="canvas"></canvas><canvas id="overlay"></canvas></div>
+    <p id="noPdf">Import the scanned PDF to see page images.</p>
+  </section>
   <section id="textPane">
     <div class="bar">
       <span>Text <small>(# heading · [nota] footnote · *italic* · **bold** · ⟦↪⟧ continues on next page · ⟦↩⟧ continued)</small></span>

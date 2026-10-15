@@ -26,7 +26,11 @@ details { position: relative; }
 #status, #editCount, #diffStat, small { color: var(--muted); }
 main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
 #imgPane { overflow: auto; border-right: 1px solid var(--line); background: #888; position: relative; }
-#canvas { display: block; margin: 0 auto; background: #fff; }
+#overlayBar { position: sticky; top: 0; left: 0; z-index: 2; }
+#overlayBar input[type=number] { width: 4em; }
+#stack { position: relative; width: max-content; margin: 8px auto; }
+#canvas { display: block; background: #fff; }
+#overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 #noPdf { color: #fff; text-align: center; margin-top: 40%; }
 #textPane { display: flex; flex-direction: column; min-height: 0; }
 .bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }

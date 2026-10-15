@@ -235,7 +235,7 @@ document.querySelectorAll('[data-export]').forEach(b => b.onclick = async () => 
   try { await exporters[b.dataset.export](); status('Exported ' + b.dataset.export); } catch (e) { status('Export failed: ' + e); }
 });
 
-// ---- start: restore the last project and PDF, or open the files named in the address: ?pdf=<url>&text=<url>[&name=<name>]
+// ---- start: restore the last project and PDF, or open the files named in the address: ?pdf=<url>&text=<url>[&name=<name>][&overlay=<url>][&save=<url>]
 // (text = pages joined by form feeds). The links are for a server that hosts the files next to this page, so opening is instant.
 async function openFromUrl(q) {
   const [pdfRes, textRes] = await Promise.all([q.get('pdf') ? fetch(q.get('pdf')) : null, fetch(q.get('text'))]);
@@ -245,6 +245,16 @@ async function openFromUrl(q) {
   const name = q.get('name') || 'book';
   P = { ...P, name, title: name, orig: pages, edit: [...pages], cur: 0, uuid: crypto.randomUUID(), save: q.get('save') };
   ensurePages(pdf?.numPages || 0);
+  if (q.get('overlay')) { // optional: a second PDF drawn over the scan, e.g. the corrected digital PDF
+    try {
+      const r = await fetch(q.get('overlay'));
+      if (!r.ok) throw new Error(r.status);
+      const f = await r.blob();
+      ovPdf = await pdfjsLib.getDocument({ data: await f.arrayBuffer() }).promise;
+      await put('overlay', f);
+      P.overlay = { ...ovDefaults };
+    } catch (e) { status('Overlay not loaded: ' + e.message); }
+  } else { ovPdf = null; await kv('readwrite', st => st.delete('overlay')); } // a new book does not keep the last book's overlay
 }
 (async () => {
   const q = new URLSearchParams(location.search);
@@ -259,5 +269,5 @@ async function openFromUrl(q) {
     try { await openFromUrl(q); saved = null; history.replaceState(null, '', location.pathname); } catch (e) { status('Open failed: ' + e.message); }
   }
   syncMeta(); go(P.cur);
-  if (!ui.status.textContent.startsWith('Open failed')) status(saved ? 'Restored last project' : 'Import a scanned PDF and its text (TXT or EPUB)');
+  if (!/^(Open failed|Overlay not loaded)/.test(ui.status.textContent)) status(saved ? 'Restored last project' : 'Import a scanned PDF and its text (TXT or EPUB)');
 })();

@@ -4,7 +4,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(['inPdf', 'inText', 'prev', 'next', 'prevEdit', 'nextEdit', 'pageNo', 'pageCount', 'editCount', 'zoom',
-  'mTitle', 'mAuthor', 'mLang', 'clearAll', 'status', 'canvas', 'noPdf', 'imgPane', 'editor', 'diff', 'diffStat', 'pullUp', 'pushDown', 'revert'].map(k => [k, $(k)]));
+  'mTitle', 'mAuthor', 'mLang', 'clearAll', 'status', 'canvas', 'noPdf', 'imgPane', 'editor', 'diff', 'diffStat', 'pullUp', 'pushDown', 'revert', 'saveBack'].map(k => [k, $(k)]));
 
 // Project: orig = imported text, edit = current text, one string per page.
 let P = { name: 'book', title: '', author: '', lang: 'eo', uuid: crypto.randomUUID(), orig: [''], edit: [''], cur: 0 };
@@ -22,7 +22,7 @@ const get = k => kv('readonly', s => s.get(k));
 let saveTimer;
 function save() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => put('project', P).then(() => status('Saved'), e => status('Save failed: ' + e)), 400);
+  saveTimer = setTimeout(() => put('project', P).then(() => { if (!/^Save(d)? back/.test(ui.status.textContent)) status('Saved'); }, e => status('Save failed: ' + e)), 400);  // the browser autosave must not hide the result of a save back
 }
 function status(s) { ui.status.textContent = s; }
 
@@ -86,7 +86,7 @@ ui.inText.onchange = async () => {
   else text = (await f.text()).replace(/\r\n?/g, '\n');
   const pages = text.includes('\f') ? text.split('\f') : splitPages(text, pdf?.numPages || Math.max(1, Math.ceil(text.length / 2000)));
   const name = f.name.replace(/(\.pages)?\.[^.]+$/, '');
-  P = { ...P, name, orig: pages, edit: [...pages], cur: 0,
+  P = { ...P, name, orig: pages, edit: [...pages], cur: 0, save: null,
     title: meta.title || P.title || name, author: meta.author || P.author, lang: meta.lang || P.lang };
   syncMeta(); go(0);
   status(`Text: ${pages.length} pages${text.includes('\f') ? '' : ' (split by length: use the line buttons to fix page ends)'}`);
@@ -142,11 +142,28 @@ addEventListener('keydown', e => {
   if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); go(P.cur + 1); }
 });
 
-function syncMeta() { ui.mTitle.value = P.title; ui.mAuthor.value = P.author; ui.mLang.value = P.lang; }
+function syncMeta() { ui.saveBack.hidden = !P.save; ui.saveBack.textContent = P.save ? `Save back (${P.save.split('/').pop()})` : 'Save back'; ui.mTitle.value = P.title; ui.mAuthor.value = P.author; ui.mLang.value = P.lang; }
 for (const [k, el] of [['title', ui.mTitle], ['author', ui.mAuthor], ['lang', ui.mLang]]) el.oninput = () => { P[k] = el.value; save(); };
 ui.clearAll.onclick = async () => {
   if (!confirm('Close this project? Its text, edits and PDF are removed from this browser. Export first if you need them.')) return;
   await kv('readwrite', s => s.clear()); location.reload();
+};
+
+// ---- save back: send the edited pages to the server the book was opened from (?save=<url>; the last part of the url names the pass the text came from)
+ui.saveBack.onclick = async () => {
+  const pages = {};
+  for (const i of edited()) pages[i] = P.edit[i];
+  if (!Object.keys(pages).length) return status('No edits to save back');
+  status('Saving back…');
+  try {
+    const r = await fetch(P.save, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pages }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    const pg = a => a.map(i => i + 1).join(', ');
+    status(`Saved back to "${d.pass}": ${d.applied.length} page(s) applied` + (d.already.length ? `, ${d.already.length} already saved` : '')
+      + (d.conflicts.length ? `; NOT saved (the server's text changed after that pass): page ${pg(d.conflicts)}` : '')
+      + (d.tags_lost.length ? `; layout tags lost on page ${pg(d.tags_lost)}` : ''));
+  } catch (e) { status('Save back failed: ' + e.message); }
 };
 
 // ---- export
@@ -191,7 +208,7 @@ async function openFromUrl(q) {
   const pages = (await textRes.text()).replace(/\r\n?/g, '\n').split('\f');
   if (pdfRes) { const f = await pdfRes.blob(); await openPdf(await f.arrayBuffer()); await put('pdf', f); }
   const name = q.get('name') || 'book';
-  P = { ...P, name, title: name, orig: pages, edit: [...pages], cur: 0, uuid: crypto.randomUUID() };
+  P = { ...P, name, title: name, orig: pages, edit: [...pages], cur: 0, uuid: crypto.randomUUID(), save: q.get('save') };
   ensurePages(pdf?.numPages || 0);
 }
 (async () => {
